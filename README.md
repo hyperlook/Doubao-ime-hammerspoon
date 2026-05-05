@@ -6,11 +6,15 @@ Hammerspoon 脚本，让 macOS 始终使用**豆包输入法**，并默认保持
 
 - **锁定豆包输入法** — 自动切回 ABC 时自动切回豆包输入法
 - **默认英文模式** — 切换到豆包输入法后自动按 Shift 进入英文状态
-- **右 Command 双击左 Option** — 按下右 Command 键时模拟双击左 Option（用于触发其他输入法切换快捷键）
+- **右 Command 双击左 Option** — 按下右 Command 键时模拟双击左 Option（用于触发豆包语音长时输入。）
 
 ## 安装
 
 1. 安装 [Hammerspoon](https://www.hammerspoon.org/)
+
+```bash
+brew install --cask hammerspoon
+```
 2. 将 `init.lua` 复制到 `~/.hammerspoon/` 目录
 3. 在 Hammerspoon 中 Reload Config
 
