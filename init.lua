@@ -50,43 +50,16 @@ local function isTargetSource(source)
 end
 
 -- ============================================
--- Shift 发送：多种实现，便于试出豆包真正能识别的那种
+-- Shift 发送：down/up 用 timer 拉开 60ms，避免同 tick 被吞
 -- ============================================
 
--- 方式 1：hs.eventtap.newKeyEvent + post（合成事件，豆包可能过滤）
-local function sendShift_eventtap()
-    hs.eventtap.event.newKeyEvent(hs.keycodes.map.shift, true):post()
-    hs.eventtap.event.newKeyEvent(hs.keycodes.map.shift, false):post()
-    log.df("[eventtap] 已发送 Shift")
-end
-
--- 方式 2：AppleScript / System Events（走 Accessibility，事件 source 不同）
-local function sendShift_applescript()
-    local ok, _, err = hs.osascript.applescript(
-        'tell application "System Events" to key code 56'
-    )
-    log.df("[applescript] Shift 结果: %s, err=%s", tostring(ok), tostring(err))
-end
-
--- 方式 3：右 Shift 走 AppleScript（key code 60）
-local function sendShift_applescriptRight()
-    local ok, _, err = hs.osascript.applescript(
-        'tell application "System Events" to key code 60'
-    )
-    log.df("[applescript right] Shift 结果: %s, err=%s", tostring(ok), tostring(err))
-end
-
--- 方式 4：eventtap 但 down/up 用 timer 拉开 60ms（模拟人按）
-local function sendShift_eventtapHold()
+local function sendShift()
     hs.eventtap.event.newKeyEvent(hs.keycodes.map.shift, true):post()
     hs.timer.doAfter(0.06, function()
         hs.eventtap.event.newKeyEvent(hs.keycodes.map.shift, false):post()
-        log.df("[eventtap-hold] 已发送 Shift")
+        log.df("已发送 Shift")
     end)
 end
-
--- 实测：豆包能识别 eventtap 发送的 Shift，但 down/up 必须用 timer 拉开（同 tick 会被吞）
-local sendShiftImpl = sendShift_eventtapHold
 
 -- 去重：switchToTargetIME 成功后和 inputSourceChanged 都会调 pressShift，
 -- 在此窗口内的重复调用合并为 1 次。
@@ -100,28 +73,7 @@ local function pressShift()
     end
     lastShiftTime = now
 
-    hs.timer.doAfter(SHIFT_DELAY, sendShiftImpl)
-end
-
--- ============================================
--- 测试函数（在 Hammerspoon Console 里逐个跑，看哪个能切中英）
--- ============================================
-function _G.testShift1()  -- eventtap 直发
-    sendShift_eventtap()
-end
-function _G.testShift2()  -- AppleScript 左 Shift
-    sendShift_applescript()
-end
-function _G.testShift3()  -- AppleScript 右 Shift
-    sendShift_applescriptRight()
-end
-function _G.testShift4()  -- eventtap + hold 60ms
-    sendShift_eventtapHold()
-end
--- 通用入口（走当前自动流程一样的实现，含去重重置）
-function _G.testShift()
-    lastShiftTime = 0
-    sendShiftImpl()
+    hs.timer.doAfter(SHIFT_DELAY, sendShift)
 end
 
 -- 真正执行一次切换 + 回读校验，失败会自我重试
@@ -330,17 +282,4 @@ end)
 alert.show("ForceDoubanIME 已启动")
 log.i("始终使用 %s，默认英文模式 + 右 Command 双击左 Option", TARGET_IME)
 
--- ============================================
--- 诊断：列出所有输入法，便于查找豆包是否注册了独立英文子源
--- 启动时打印一次，也可在 Console 手动调用 _G.listIMEs()
--- ============================================
-local function listIMEs()
-    local methods = hs.keycodes.methods()
-    log.i("==== 系统输入法列表（共 %d 个） ====", #methods)
-    for i, m in ipairs(methods) do
-        log.i("  [%d] %s", i, tostring(m))
-    end
-    log.i("==== 当前输入法: %s ====", tostring(hs.keycodes.currentMethod()))
-end
-_G.listIMEs = listIMEs
-listIMEs()
+
