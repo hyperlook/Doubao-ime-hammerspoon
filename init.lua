@@ -167,6 +167,7 @@ end
 -- 右 Command 双击左 Option
 -- ============================================
 
+--[[
 local function tapLeftOptionOnce()
     hs.eventtap.event.newKeyEvent(hs.keycodes.map.alt, true):post()
     hs.eventtap.event.newKeyEvent(hs.keycodes.map.alt, false):post()
@@ -246,6 +247,7 @@ local function safeEventHandler(event)
 
     return result
 end
+--]]
 
 -- ============================================
 -- 启动
@@ -260,11 +262,11 @@ end
 
 _G.inputSourceWatcher = hs.keycodes.inputSourceChanged(safeInputSourceChanged)
 
-_G.rightCmdWatcher = hs.eventtap.new(
-    { hs.eventtap.event.types.flagsChanged },
-    safeEventHandler
-)
-_G.rightCmdWatcher:start()
+-- _G.rightCmdWatcher = hs.eventtap.new(
+--     { hs.eventtap.event.types.flagsChanged },
+--     safeEventHandler
+-- )
+-- _G.rightCmdWatcher:start()
 
 _G.appWatcher = hs.application.watcher.new(safeAppEvent)
 _G.appWatcher:start()
