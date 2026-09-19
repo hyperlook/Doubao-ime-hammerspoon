@@ -3,6 +3,7 @@
 -- 机制：麦克风硬件状态判断录音起止（不拦按键）
 --       麦克风停只代表录音结束，转写往往还在跑；
 --       再等焦点文本稳定后才切 ABC，避免长语音被掐掉
+--       切换到其他 App 时默认 ABC（录音中除外）
 -- =======================================================
 require("hs.ipc")
 
@@ -12,7 +13,7 @@ local ABC_SOURCE_ID = "com.apple.keylayout.ABC"
 local SHORT_DURATION = 1.8
 local SHORT_COMMIT_DELAY = 0.4
 
--- 长语音：录音越长，给转写的收尾时间越宽
+-- 长语音：能读到焦点文本时等上屏稳定；读不到则固定约 1s
 local POLL_INTERVAL = 0.1
 local TEXT_STABLE_FOR = 0.6 -- 文本连续稳定多久视为上屏完成
 local MIN_WAIT_BASE = 0.5
@@ -21,6 +22,7 @@ local MIN_WAIT_CAP = 2.2
 local MAX_WAIT_BASE = 2.0
 local MAX_WAIT_PER_SEC = 0.4
 local MAX_WAIT_CAP = 12.0
+local FALLBACK_DELAY = 1.0 -- 终端等读不到文本的 App，停麦后约 1s 切 ABC
 
 local log = hs.logger.new("DoubaoVoice", "info")
 
@@ -37,6 +39,15 @@ local commitTimer = nil
 local function isDoubaoIME()
     local curIME = hs.keycodes.currentSourceID() or ""
     return string.find(curIME, "doubao") ~= nil
+end
+
+local function isDoubaoApp(app)
+    if not app then
+        return false
+    end
+    local bid = (app:bundleID() or ""):lower()
+    local name = app:name() or ""
+    return string.find(bid, "doubao") ~= nil or string.find(name, "豆包") ~= nil
 end
 
 local function isAnyMicInUse()
@@ -130,11 +141,6 @@ local function maxWaitFor(duration)
     return clamp(MAX_WAIT_BASE + duration * MAX_WAIT_PER_SEC, 2.0, MAX_WAIT_CAP)
 end
 
--- 读不到焦点文本时，按录音时长估一个偏保守的等待
-local function fallbackDelayFor(duration)
-    return clamp(0.6 + duration * 0.35, 0.6, MAX_WAIT_CAP)
-end
-
 local function startRecordPoll()
     stopRecordPoll()
     streamingLikely = false
@@ -182,9 +188,8 @@ local function beginWaitForCommit(duration)
     local sawChange = false
 
     if not axUsable then
-        local delay = fallbackDelayFor(duration)
-        logf("长语音 %.1fs，读不到文本，%.2fs 后切 ABC", duration, delay)
-        commitTimer = hs.timer.doAfter(delay, function()
+        logf("长语音 %.1fs，读不到文本，fallback %.2fs 后切 ABC", duration, FALLBACK_DELAY)
+        commitTimer = hs.timer.doAfter(FALLBACK_DELAY, function()
             switchToABC("fallback")
         end)
         _G.DoubaoCommitTimer = commitTimer
@@ -286,6 +291,26 @@ _G.deviceWatcher = hs.audiodevice.watcher.setCallback(function(event)
     end
 end)
 hs.audiodevice.watcher.start()
+
+-- 切到其他 App 时默认 ABC（录音中不打断；忽略豆包自己的进程）
+local function onAppActivated(appName, eventType, app)
+    if eventType ~= hs.application.watcher.activated then
+        return
+    end
+    if isDoubaoApp(app) then
+        return
+    end
+    if wasRecording or isAnyMicInUse() then
+        logf("切 App（%s），正在录音，保持豆包", appName or "?")
+        return
+    end
+    if isDoubaoIME() then
+        switchToABC("app-switch:" .. (appName or "?"))
+    end
+end
+
+_G.DoubaoAppWatcher = hs.application.watcher.new(onAppActivated)
+_G.DoubaoAppWatcher:start()
 
 -- 配置修改自动重载
 _G.DoubaoConfigWatcher = hs.pathwatcher.new(os.getenv("HOME") .. "/.hammerspoon/", hs.reload):start()
