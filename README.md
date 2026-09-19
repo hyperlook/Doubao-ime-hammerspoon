@@ -4,9 +4,10 @@ Hammerspoon 脚本，让 macOS 始终使用**豆包输入法**，并默认保持
 
 ## 功能
 
-- **锁定豆包输入法** — 自动切回 ABC 时自动切回豆包输入法
-- **默认英文模式** — 切换到豆包输入法后自动按 Shift 进入英文状态
-- **右 Command 双击左 Option** — 按下右 Command 键时模拟双击左 Option（用于触发豆包语音长时输入。）
+- **锁定豆包输入法** — 被切到 ABC 等其它输入法时自动切回豆包
+- **默认英文模式** — 从其它输入法回到豆包后自动按一次 Shift 进入英文
+- **手动中文** — 已经在豆包时不会再自动按 Shift，需要中文时自己按 Shift
+- **右 Command 双击左 Option** — 默认关掉（代码里注释着），用于触发豆包语音
 
 ## 安装
 
@@ -28,17 +29,18 @@ cp init.lua ~/.hammerspoon/init.lua
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `TARGET_IME` | `豆包输入法` | 目标输入法名称 |
-| `SKIP_IME_LIST` | `{"ABC", "com.apple.keylayout.ABC"}` | 自动切回的输入法列表 |
-| `OPTION_PRESS_DELAY` | `0.30` | 按住右 Command 多久后触发双击 Option（秒） |
-| `OPTION_DOUBLE_TAP_INTERVAL` | `0.18` | 两次 Option 按键间隔（秒） |
+| `TARGET_SOURCE_ID` | `com.bytedance.inputmethod.doubaoime.pinyin` | 豆包输入法 TIS ID |
+| `SHIFT_AFTER_SWITCH` | `0.18` | 切到豆包后再发 Shift 的等待（秒） |
+| `SHIFT_HOLD` | `0.09` | Shift tap 按下时长（秒），豆包 1.0 过短会吞 |
+| `SAFETY_CHECK_INTERVAL` | `2.5` | 兜底巡检间隔（秒） |
 
 ## 原理
 
-1. 通过 `hs.keycodes.inputSourceChanged` 监听输入法切换事件
-2. 检测到被强制的输入法（如 ABC）时，调用 `hs.keycodes.setMethod()` 切回目标输入法
-3. 切到目标输入法后延迟发送 Shift 按键，确保英文模式
-4. 通过 `hs.eventtap` 监听右 Command 的 `flagsChanged` 事件，模拟双击左 Option
+1. 用 `hs.keycodes.currentSourceID()` 识别当前输入法（切到 ABC 时 `currentMethod()` 是 `nil`）
+2. 切回豆包优先 `currentSourceID(id)`，失败再 `setMethod(名字)`（macOS Tahoe 上后者经常失灵）
+3. 只在「刚从别的输入法回到豆包」时发一次左 Shift 的 `flagsChanged` tap
+4. 密码框等安全输入期间不切换、不按 Shift
+5. 密码框等场景若 Shift 把系统切到了 ABC，会停用自动 Shift 并只锁回豆包
 
 ## License
 
