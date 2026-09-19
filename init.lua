@@ -7,6 +7,11 @@
 -- =======================================================
 require("hs.ipc")
 
+local M = {}
+M.name = "DoubaoVoice"
+M.version = "1.1.0"
+M.running = false
+
 local ABC_SOURCE_ID = "com.apple.keylayout.ABC"
 
 -- 短语音：转写几乎立刻结束，固定再等一小会即可
@@ -110,11 +115,13 @@ end
 
 local function stopRecordPoll()
     recordPoll = stopTimer(recordPoll)
+    M.recordPoll = nil
     _G.DoubaoRecordPoll = nil
 end
 
 local function stopCommitTimer()
     commitTimer = stopTimer(commitTimer)
+    M.commitTimer = nil
     _G.DoubaoCommitTimer = nil
 end
 
@@ -163,6 +170,7 @@ local function startRecordPoll()
             lastFp = fp
         end
     end)
+    M.recordPoll = recordPoll
     _G.DoubaoRecordPoll = recordPoll
 end
 
@@ -175,6 +183,7 @@ local function beginWaitForCommit(duration)
         commitTimer = hs.timer.doAfter(SHORT_COMMIT_DELAY, function()
             switchToABC("short")
         end)
+        M.commitTimer = commitTimer
         _G.DoubaoCommitTimer = commitTimer
         return
     end
@@ -192,6 +201,7 @@ local function beginWaitForCommit(duration)
         commitTimer = hs.timer.doAfter(FALLBACK_DELAY, function()
             switchToABC("fallback")
         end)
+        M.commitTimer = commitTimer
         _G.DoubaoCommitTimer = commitTimer
         return
     end
@@ -234,6 +244,7 @@ local function beginWaitForCommit(duration)
             switchToABC(sawChange and "text-stable" or "stream-stable")
         end
     end)
+    M.commitTimer = commitTimer
     _G.DoubaoCommitTimer = commitTimer
 end
 
@@ -263,13 +274,20 @@ local function onAudioChange()
     end
 end
 
--- 为所有音频输入设备绑定系统硬件级监听
 local audioWatchers = {}
-local function setupAudioWatchers()
+local deviceWatcher = nil
+local appWatcher = nil
+
+local function stopAudioWatchers()
     for _, watcher in ipairs(audioWatchers) do
         watcher:watcherStop()
     end
     audioWatchers = {}
+    M.audioWatchers = audioWatchers
+end
+
+local function setupAudioWatchers()
+    stopAudioWatchers()
 
     local devs = hs.audiodevice.allInputDevices()
     for _, dev in ipairs(devs) do
@@ -279,18 +297,8 @@ local function setupAudioWatchers()
         watcher:watcherStart()
         table.insert(audioWatchers, watcher)
     end
-    _G.DoubaoVoiceAudioWatchers = audioWatchers
+    M.audioWatchers = audioWatchers
 end
-
-setupAudioWatchers()
-
--- 当有新音频设备插入/拔出时重新绑定
-_G.deviceWatcher = hs.audiodevice.watcher.setCallback(function(event)
-    if event == "dev#" then
-        setupAudioWatchers()
-    end
-end)
-hs.audiodevice.watcher.start()
 
 -- 切到其他 App 时默认 ABC（录音中不打断；忽略豆包自己的进程）
 local function onAppActivated(appName, eventType, app)
@@ -309,10 +317,61 @@ local function onAppActivated(appName, eventType, app)
     end
 end
 
-_G.DoubaoAppWatcher = hs.application.watcher.new(onAppActivated)
-_G.DoubaoAppWatcher:start()
+function M.start()
+    if M.running then
+        return M
+    end
 
--- 配置修改自动重载
-_G.DoubaoConfigWatcher = hs.pathwatcher.new(os.getenv("HOME") .. "/.hammerspoon/", hs.reload):start()
+    setupAudioWatchers()
 
-hs.alert.show("豆包语音极简版已启动")
+    deviceWatcher = hs.audiodevice.watcher.setCallback(function(event)
+        if event == "dev#" then
+            setupAudioWatchers()
+        end
+    end)
+    hs.audiodevice.watcher.start()
+    M.deviceWatcher = deviceWatcher
+
+    appWatcher = hs.application.watcher.new(onAppActivated)
+    appWatcher:start()
+    M.appWatcher = appWatcher
+
+    M.running = true
+    logf("豆包语音助手已启动")
+    return M
+end
+
+function M.stop()
+    if not M.running then
+        return M
+    end
+
+    stopCommitTimer()
+    stopRecordPoll()
+    stopAudioWatchers()
+
+    if deviceWatcher then
+        hs.audiodevice.watcher.stop()
+        deviceWatcher = nil
+        M.deviceWatcher = nil
+    end
+
+    if appWatcher then
+        appWatcher:stop()
+        appWatcher = nil
+        M.appWatcher = nil
+    end
+
+    wasRecording = false
+    recordStartedAt = nil
+    streamingLikely = false
+
+    M.running = false
+    logf("豆包语音助手已停止")
+    return M
+end
+
+-- 默认加载即启动
+M.start()
+
+return M
